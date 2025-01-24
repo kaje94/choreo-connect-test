@@ -1,0 +1,1 @@
+- [ ] there could be multiple endpoint in the component, so /{component-name} might not be sufficent
