@@ -24,6 +24,7 @@ var (
 type RequestDetails struct {
 	RequestID string            `json:"request_id"`
 	Method    string            `json:"method"`
+	Domain    string            `json:"domain"`
 	Path      string            `json:"path"`
 	Headers   map[string]string `json:"headers"`
 	Query     map[string]string `json:"query"`
@@ -196,14 +197,6 @@ func handleResponseFromClient(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleRequestFromClient(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	componentName := vars["component-name"]
-	if componentName == "" {
-		// Respond with an error in ResponseDetails format
-		respondWithError(w, http.StatusBadRequest, "component-name is required")
-		return
-	}
-
 	// Parse the request body into RequestDetails
 	var reqDetails RequestDetails
 	if err := json.NewDecoder(r.Body).Decode(&reqDetails); err != nil {
@@ -217,12 +210,11 @@ func handleRequestFromClient(w http.ResponseWriter, r *http.Request) {
 	var urlStr string
 	if reqDetails.Port != "" {
 		// Include the port in the URL (e.g., http://{component-name}:{port}/path)
-		urlStr = fmt.Sprintf("http://%s:%s%s", componentName, reqDetails.Port, reqDetails.Path)
+		urlStr = fmt.Sprintf("http://%s:%s%s", reqDetails.Domain, reqDetails.Port, reqDetails.Path)
 	} else {
 		// Default URL without the port (e.g., http://{component-name}/path)
-		urlStr = fmt.Sprintf("http://%s%s", componentName, reqDetails.Path)
+		urlStr = fmt.Sprintf("http://%s%s", reqDetails.Domain, reqDetails.Path)
 	}
-
 	// todo: uncomment if you want to test
 	// if componentName == "node-webapp" {
 	// 	urlStr = fmt.Sprintf("http://localhost:%s%s", "3000", reqDetails.Path)
@@ -310,7 +302,7 @@ func main() {
 	r.HandleFunc("/register/{component-name}", registerClientForSSE).Methods("GET")
 	r.HandleFunc("/request/{component-name}/{path:.*}", forwardRequestToClient)
 	r.HandleFunc("/response/{component-name}", handleResponseFromClient).Methods("POST")
-	r.HandleFunc("/handle/{component-name}", handleRequestFromClient).Methods("POST")
+	r.HandleFunc("/handle", handleRequestFromClient).Methods("POST")
 
 	server := &http.Server{
 		Addr:    ":8080",
