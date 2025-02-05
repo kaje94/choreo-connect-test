@@ -3,6 +3,12 @@ info:
   title: SSE and Request Forwarding API
   version: 1.0.0
 paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        "200":
+          description: Successfully running service
   /register/{component-name}:
     get:
       summary: Register a client for SSE

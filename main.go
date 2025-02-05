@@ -306,6 +306,7 @@ func respondWithError(w http.ResponseWriter, statusCode int, message string) {
 func main() {
 	r := mux.NewRouter()
 
+	r.HandleFunc("/health", func(http.ResponseWriter, *http.Request) {}).Methods("GET")
 	r.HandleFunc("/register/{component-name}", registerClientForSSE).Methods("GET")
 	r.HandleFunc("/request/{component-name}/{path:.*}", forwardRequestToClient)
 	r.HandleFunc("/response/{component-name}", handleResponseFromClient).Methods("POST")
