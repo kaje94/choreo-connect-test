@@ -77,12 +77,6 @@ paths:
   /handle:
     post:
       summary: Handle request from client
-      parameters:
-        - name: component-name
-          in: path
-          required: true
-          schema:
-            type: string
       requestBody:
         required: true
         content:
