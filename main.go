@@ -99,14 +99,14 @@ func forwardRequestToClient(w http.ResponseWriter, r *http.Request) {
 
 	requestID := fmt.Sprintf("%d", time.Now().UnixNano())
 	responseChan := make(chan ResponseDetails)
-	responsesMu.Lock()
+	// responsesMu.Lock()
 	responseChannels[requestID] = responseChan
-	responsesMu.Unlock()
+	// responsesMu.Unlock()
 
 	defer func() {
-		responsesMu.Lock()
+		// responsesMu.Lock()
 		delete(responseChannels, requestID)
-		responsesMu.Unlock()
+		// responsesMu.Unlock()
 	}()
 
 	body, err := io.ReadAll(r.Body)
@@ -187,11 +187,11 @@ func handleResponseFromClient(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Received response for request ID: %s\n", response.RequestID)
 	log.Printf("Response details: %+v\n", response.Response)
 
-	responsesMu.Lock()
+	// responsesMu.Lock()// todo: temporarily commented out mutex locks
 	if responseChan, ok := responseChannels[response.RequestID]; ok {
 		responseChan <- response.Response
 	}
-	responsesMu.Unlock()
+	// responsesMu.Unlock()
 
 	w.WriteHeader(http.StatusOK)
 }
