@@ -1,0 +1,85 @@
+asyncapi: "2.6.0"
+info:
+  title: WebSocket API for Component Communication
+  version: "1.0.0"
+  description: |
+    This API allows clients to connect to the server via WebSocket and handle bidirectional communication.
+    Clients can receive requests and send responses back to the server.
+
+servers:
+  production:
+    url: ws://localhost:8080
+    protocol: ws
+    description: Production WebSocket server
+
+channels:
+  /ws/{component-name}:
+    parameters:
+      component-name:
+        description: The name of the component connecting to the WebSocket.
+        schema:
+          type: string
+    subscribe:
+      operationId: handleWebSocket
+      summary: Subscribe to WebSocket messages
+      description: |
+        Clients can connect to this WebSocket endpoint to receive requests and send responses.
+      message:
+        oneOf:
+          - $ref: "#/components/messages/RequestMessage"
+          - $ref: "#/components/messages/ResponseMessage"
+
+components:
+  messages:
+    RequestMessage:
+      name: RequestMessage
+      summary: A request sent from the server to the client.
+      payload:
+        type: object
+        properties:
+          request_id:
+            type: string
+            description: Unique ID for the request.
+          method:
+            type: string
+            description: HTTP method (e.g., GET, POST).
+          path:
+            type: string
+            description: Request path (e.g., /foo/bar).
+          headers:
+            type: object
+            description: Request headers.
+            additionalProperties:
+              type: string
+          query:
+            type: object
+            description: Query parameters.
+            additionalProperties:
+              type: string
+          body:
+            type: string
+            description: Request body.
+          port:
+            type: string
+            description: Optional port (e.g., "8080").
+
+    ResponseMessage:
+      name: ResponseMessage
+      summary: A response sent from the client to the server.
+      payload:
+        type: object
+        properties:
+          request_id:
+            type: string
+            description: Unique ID for the request.
+          status_code:
+            type: integer
+            description: HTTP status code (e.g., 200, 404).
+          headers:
+            type: object
+            description: Response headers.
+            additionalProperties:
+              type: string
+          body:
+            type: string
+            description: Response body.

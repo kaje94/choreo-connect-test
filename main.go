@@ -12,33 +12,43 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/gorilla/websocket"
 )
 
 var (
-	clients          = make(map[string]chan string)          // Map to store client channels
-	responseChannels = make(map[string]chan ResponseDetails) // Map to store response channels
-	clientsMu        sync.Mutex                              // Mutex to protect the clients map
-	responsesMu      sync.Mutex                              // Mutex to protect the responseChannels map
+	clients     = make(map[string]*websocket.Conn) // Map to store WebSocket connections
+	clientsMu   sync.Mutex                         // Mutex to protect the clients map
+	responsesMu sync.Mutex                         // Mutex to protect the clients map
+
+	responseChannels = make(map[string]chan ResponseDetails)
+
+	upgrader = websocket.Upgrader{
+		CheckOrigin: func(r *http.Request) bool {
+			return true // Allow all connections
+		},
+	}
 )
 
 type RequestDetails struct {
 	RequestID string            `json:"request_id"`
 	Method    string            `json:"method"`
-	Domain    string            `json:"domain"`
 	Path      string            `json:"path"`
 	Headers   map[string]string `json:"headers"`
 	Query     map[string]string `json:"query"`
 	Body      string            `json:"body"`
 	Port      string            `json:"port"`
+	Domain    string            `json:"domain"`
 }
 
 type ResponseDetails struct {
+	RequestID  string            `json:"request_id"`
 	StatusCode int               `json:"status_code"`
 	Headers    map[string]string `json:"headers"`
 	Body       string            `json:"body"`
 }
 
-func registerClientForSSE(w http.ResponseWriter, r *http.Request) {
+// Handle WebSocket connections
+func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	componentName := vars["component-name"]
 	if componentName == "" {
@@ -46,39 +56,46 @@ func registerClientForSSE(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	clientsMu.Lock()
-	if _, exists := clients[componentName]; exists {
-		clientsMu.Unlock()
-		http.Error(w, "component-name already registered", http.StatusConflict)
+	// Upgrade the HTTP connection to a WebSocket connection
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Println("Failed to upgrade to WebSocket:", err)
 		return
 	}
+	defer conn.Close()
 
-	clientChan := make(chan string)
-	clients[componentName] = clientChan
+	// Register the client
+	clientsMu.Lock()
+	clients[componentName] = conn
 	clientsMu.Unlock()
 
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
+	log.Printf("Client connected: %s\n", componentName)
 
-	fmt.Fprintf(w, "data: %s\n\n", `{"status":"registered"}`)
-	w.(http.Flusher).Flush()
-
+	// Handle incoming messages from the client
 	for {
-		select {
-		case msg := <-clientChan:
-			fmt.Fprintf(w, "data: %s\n\n", msg)
-			w.(http.Flusher).Flush()
-		case <-r.Context().Done():
+		var response ResponseDetails
+		err := conn.ReadJSON(&response)
+		if err != nil {
+			log.Printf("Client %s disconnected: %v\n", componentName, err)
 			clientsMu.Lock()
 			delete(clients, componentName)
 			clientsMu.Unlock()
 			return
 		}
+
+		log.Printf("Received response from client %s: %+v\n", componentName, response)
+
+		// Forward the response to the appropriate HTTP request handler
+		clientsMu.Lock()
+		if responseChan, ok := responseChannels[response.RequestID]; ok {
+			responseChan <- response
+		}
+		clientsMu.Unlock()
 	}
 }
 
-func forwardRequestToClient(w http.ResponseWriter, r *http.Request) {
+// Handle incoming HTTP requests
+func handleRequest(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	componentName := vars["component-name"]
 	subPath := vars["path"]
@@ -89,7 +106,7 @@ func forwardRequestToClient(w http.ResponseWriter, r *http.Request) {
 	}
 
 	clientsMu.Lock()
-	clientChan, ok := clients[componentName]
+	conn, ok := clients[componentName]
 	clientsMu.Unlock()
 
 	if !ok {
@@ -97,18 +114,22 @@ func forwardRequestToClient(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Generate a unique request ID
 	requestID := fmt.Sprintf("%d", time.Now().UnixNano())
+
+	// Create a response channel for this request
 	responseChan := make(chan ResponseDetails)
-	// responsesMu.Lock()
+	responsesMu.Lock()
 	responseChannels[requestID] = responseChan
-	// responsesMu.Unlock()
+	responsesMu.Unlock()
 
 	defer func() {
-		// responsesMu.Lock()
+		responsesMu.Lock()
 		delete(responseChannels, requestID)
-		// responsesMu.Unlock()
+		responsesMu.Unlock()
 	}()
 
+	// Read the request body
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "failed to read request body", http.StatusInternalServerError)
@@ -116,6 +137,7 @@ func forwardRequestToClient(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.Body.Close()
 
+	// Convert headers and query parameters to maps
 	headers := make(map[string]string)
 	for key, values := range r.Header {
 		headers[key] = values[0]
@@ -126,11 +148,13 @@ func forwardRequestToClient(w http.ResponseWriter, r *http.Request) {
 		query[key] = values[0]
 	}
 
+	// Reconstruct the full path including sub-routes
 	fullPath := "/" + subPath
 	if r.URL.RawQuery != "" {
 		fullPath += "?" + r.URL.RawQuery
 	}
 
+	// Create a RequestDetails struct
 	reqDetails := RequestDetails{
 		RequestID: requestID,
 		Method:    r.Method,
@@ -140,60 +164,31 @@ func forwardRequestToClient(w http.ResponseWriter, r *http.Request) {
 		Body:      string(body),
 	}
 
-	reqDetailsJSON, err := json.Marshal(reqDetails)
+	// Send the request details to the client via WebSocket
+	err = conn.WriteJSON(reqDetails)
 	if err != nil {
-		http.Error(w, "failed to marshal request details", http.StatusInternalServerError)
+		log.Println("Failed to send request to client:", err)
+		http.Error(w, "failed to forward request to client", http.StatusInternalServerError)
 		return
 	}
 
-	clientChan <- string(reqDetailsJSON)
-
+	// Wait for the client's response with a timeout
 	select {
 	case response := <-responseChan:
-		w.WriteHeader(response.StatusCode)
+
+		// Set the headers from the response
 		for key, value := range response.Headers {
 			w.Header().Set(key, value)
 		}
+
+		// Set the HTTP status code from the response
+		w.WriteHeader(response.StatusCode)
+
+		// Write the response body
 		w.Write([]byte(response.Body))
 	case <-time.After(30 * time.Second):
 		http.Error(w, "client did not respond in time", http.StatusGatewayTimeout)
 	}
-}
-
-func handleResponseFromClient(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	componentName := vars["component-name"]
-	if componentName == "" {
-		http.Error(w, "component-name is required", http.StatusBadRequest)
-		return
-	}
-
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		http.Error(w, "failed to read response body", http.StatusInternalServerError)
-		return
-	}
-	defer r.Body.Close()
-
-	var response struct {
-		RequestID string          `json:"request_id"`
-		Response  ResponseDetails `json:"response"`
-	}
-	if err := json.Unmarshal(body, &response); err != nil {
-		http.Error(w, "failed to parse response", http.StatusBadRequest)
-		return
-	}
-
-	log.Printf("Received response for request ID: %s\n", response.RequestID)
-	log.Printf("Response details: %+v\n", response.Response)
-
-	// responsesMu.Lock()// todo: temporarily commented out mutex locks
-	if responseChan, ok := responseChannels[response.RequestID]; ok {
-		responseChan <- response.Response
-	}
-	// responsesMu.Unlock()
-
-	w.WriteHeader(http.StatusOK)
 }
 
 func handleRequestFromClient(w http.ResponseWriter, r *http.Request) {
@@ -298,12 +293,16 @@ func respondWithError(w http.ResponseWriter, statusCode int, message string) {
 func main() {
 	r := mux.NewRouter()
 
+	// WebSocket endpoint
+	r.HandleFunc("/ws/{component-name}", handleWebSocket)
+
+	// HTTP request endpoint
 	r.HandleFunc("/health", func(http.ResponseWriter, *http.Request) {}).Methods("GET")
-	r.HandleFunc("/register/{component-name}", registerClientForSSE).Methods("GET")
-	r.HandleFunc("/request/{component-name}/{path:.*}", forwardRequestToClient)
-	r.HandleFunc("/response/{component-name}", handleResponseFromClient).Methods("POST")
+	r.HandleFunc("/request/{component-name}", handleRequest)
+	r.HandleFunc("/request/{component-name}/{path:.*}", handleRequest)
 	r.HandleFunc("/handle", handleRequestFromClient).Methods("POST")
 
+	// Start the server
 	server := &http.Server{
 		Addr:    ":8080",
 		Handler: r,

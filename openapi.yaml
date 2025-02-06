@@ -1,6 +1,7 @@
 openapi: 3.0.0
 info:
-  title: SSE and Request Forwarding API
+  title: REST API for Component Communication
+  description: "REST APIs to Bridge Local Env"
   version: 1.0.0
 paths:
   /health:
@@ -9,18 +10,6 @@ paths:
       responses:
         "200":
           description: Successfully running service
-  /register/{component-name}:
-    get:
-      summary: Register a client for SSE
-      parameters:
-        - name: component-name
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Successfully registered for SSE
 
   /request/{component-name}/{path}:
     parameters:
@@ -55,24 +44,33 @@ paths:
         "200":
           description: Request forwarded successfully
 
-  /response/{component-name}:
-    post:
-      summary: Handle response from client
-      parameters:
-        - name: component-name
-          in: path
-          required: true
-          schema:
-            type: string
-      requestBody:
+  /request/{component-name}:
+    parameters:
+      - name: component-name
+        in: path
         required: true
-        content:
-          application/json:
-            schema:
-              type: object
+        schema:
+          type: string
+    get:
+      summary: Forward a GET request to the client
       responses:
         "200":
-          description: Response handled successfully
+          description: Request forwarded successfully
+    post:
+      summary: Forward a POST request to the client
+      responses:
+        "200":
+          description: Request forwarded successfully
+    put:
+      summary: Forward a PUT request to the client
+      responses:
+        "200":
+          description: Request forwarded successfully
+    delete:
+      summary: Forward a DELETE request to the client
+      responses:
+        "200":
+          description: Request forwarded successfully
 
   /handle:
     post:
