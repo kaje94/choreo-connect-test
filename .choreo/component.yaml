@@ -1,10 +1,18 @@
 schemaVersion: 1.1
 endpoints:
-  - name: ws1
+  - name: ws-proxy
     service:
-      port: 8080
+      port: 8081
       basePath: /
     type: WS
     networkVisibilities:
       - Public
     schemaFilePath: asyncapi.yaml
+  - name: rest-proxy
+    service:
+      port: 8080
+      basePath: /
+    type: REST
+    networkVisibilities:
+      - Public
+    schemaFilePath: openapi.yaml

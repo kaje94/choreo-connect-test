@@ -291,23 +291,32 @@ func respondWithError(w http.ResponseWriter, statusCode int, message string) {
 }
 
 func main() {
-	r := mux.NewRouter()
+	// Router for REST API
+	apiRouter := mux.NewRouter()
+	apiRouter.HandleFunc("/health", func(http.ResponseWriter, *http.Request) {}).Methods("GET")
+	apiRouter.HandleFunc("/request/{component-name}", handleRequest)
+	apiRouter.HandleFunc("/request/{component-name}/{path:.*}", handleRequest)
+	apiRouter.HandleFunc("/handle", handleRequestFromClient).Methods("POST")
 
-	// WebSocket endpoint
-	r.HandleFunc("/ws/{component-name}", handleWebSocket)
+	// Router for WebSocket
+	wsRouter := mux.NewRouter()
+	wsRouter.HandleFunc("/ws/{component-name}", handleWebSocket)
 
-	// HTTP request endpoint
-	r.HandleFunc("/health", func(http.ResponseWriter, *http.Request) {}).Methods("GET")
-	r.HandleFunc("/request/{component-name}", handleRequest)
-	r.HandleFunc("/request/{component-name}/{path:.*}", handleRequest)
-	r.HandleFunc("/handle", handleRequestFromClient).Methods("POST")
+	// Start REST API server on port 8080
+	go func() {
+		apiServer := &http.Server{
+			Addr:    ":8080",
+			Handler: apiRouter,
+		}
+		log.Println("REST API server started on :8080")
+		log.Fatal(apiServer.ListenAndServe())
+	}()
 
-	// Start the server
-	server := &http.Server{
-		Addr:    ":8080",
-		Handler: r,
+	// Start WebSocket server on port 8081
+	wsServer := &http.Server{
+		Addr:    ":8081",
+		Handler: wsRouter,
 	}
-
-	log.Println("Server started on :8080")
-	log.Fatal(server.ListenAndServe())
+	log.Println("WebSocket server started on :8081")
+	log.Fatal(wsServer.ListenAndServe())
 }
