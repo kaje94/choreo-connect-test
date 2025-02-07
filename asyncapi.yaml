@@ -13,10 +13,14 @@ servers:
     description: Production WebSocket server
 
 channels:
-  /ws/{component-name}:
+  /ws/{user}/{component}:
     parameters:
-      component-name:
-        description: The name of the component connecting to the WebSocket.
+      user:
+        description: ID of the user connecting to the WebSocket.
+        schema:
+          type: string
+      component:
+        description: The handle of the component connecting to the WebSocket.
         schema:
           type: string
     subscribe:

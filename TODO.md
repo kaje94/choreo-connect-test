@@ -1,3 +1,0 @@
-- [ ] there could be multiple endpoint in the component, so /{component-name} might not be sufficient. perhaps concat component name and endpoint name from client side
-- [ ] Need to add userid also to the path /{user-id}/component-name
-- [ ] Add better logs

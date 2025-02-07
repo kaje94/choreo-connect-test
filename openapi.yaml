@@ -11,9 +11,14 @@ paths:
         "200":
           description: Successfully running service
 
-  /request/{component-name}/{path}:
+  /request/{user}/{component}/{path}:
     parameters:
-      - name: component-name
+      - name: user
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: component
         in: path
         required: true
         schema:
@@ -44,9 +49,14 @@ paths:
         "200":
           description: Request forwarded successfully
 
-  /request/{component-name}:
+  /request/{user}/{component}:
     parameters:
-      - name: component-name
+      - name: user
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: component
         in: path
         required: true
         schema:

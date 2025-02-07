@@ -50,11 +50,22 @@ type ResponseDetails struct {
 // Handle WebSocket connections
 func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
-	componentName := vars["component-name"]
-	if componentName == "" {
-		http.Error(w, "component-name is required", http.StatusBadRequest)
+
+	userHandle := vars["user"]
+	if userHandle == "" {
+		http.Error(w, "user is required", http.StatusBadRequest)
 		return
 	}
+
+	componentHandle := vars["component"]
+	if componentHandle == "" {
+		http.Error(w, "component is required", http.StatusBadRequest)
+		return
+	}
+
+	clientKey := fmt.Sprintf("%s-%s", userHandle, componentHandle)
+
+	log.Println("Received handle websocket request for key:", clientKey)
 
 	// Upgrade the HTTP connection to a WebSocket connection
 	conn, err := upgrader.Upgrade(w, r, nil)
@@ -66,24 +77,24 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	// Register the client
 	clientsMu.Lock()
-	clients[componentName] = conn
+	clients[clientKey] = conn
 	clientsMu.Unlock()
 
-	log.Printf("Client connected: %s\n", componentName)
+	log.Printf("Client connected: %s\n", clientKey)
 
 	// Handle incoming messages from the client
 	for {
 		var response ResponseDetails
 		err := conn.ReadJSON(&response)
 		if err != nil {
-			log.Printf("Client %s disconnected: %v\n", componentName, err)
+			log.Printf("Client %s disconnected: %v\n", clientKey, err)
 			clientsMu.Lock()
-			delete(clients, componentName)
+			delete(clients, clientKey)
 			clientsMu.Unlock()
 			return
 		}
 
-		log.Printf("Received response from client %s: %+v\n", componentName, response)
+		log.Printf("Received response from client %s: %+v\n", clientKey, response)
 
 		// Forward the response to the appropriate HTTP request handler
 		clientsMu.Lock()
@@ -97,20 +108,30 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 // Handle incoming HTTP requests
 func handleRequest(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
-	componentName := vars["component-name"]
 	subPath := vars["path"]
 
-	if componentName == "" {
-		http.Error(w, "component-name is required", http.StatusBadRequest)
+	userHandle := vars["user"]
+	if userHandle == "" {
+		http.Error(w, "user is required", http.StatusBadRequest)
 		return
 	}
 
+	componentHandle := vars["component"]
+	if componentHandle == "" {
+		http.Error(w, "component is required", http.StatusBadRequest)
+		return
+	}
+
+	clientKey := fmt.Sprintf("%s-%s", userHandle, componentHandle)
+
+	log.Println("Received handle request request for key:", clientKey)
+
 	clientsMu.Lock()
-	conn, ok := clients[componentName]
+	conn, ok := clients[clientKey]
 	clientsMu.Unlock()
 
 	if !ok {
-		http.Error(w, "component not found", http.StatusNotFound)
+		http.Error(w, "component key not found", http.StatusNotFound)
 		return
 	}
 
@@ -204,16 +225,12 @@ func handleRequestFromClient(w http.ResponseWriter, r *http.Request) {
 	// Construct the URL with or without the port
 	var urlStr string
 	if reqDetails.Port != "" {
-		// Include the port in the URL (e.g., http://{component-name}:{port}/path)
 		urlStr = fmt.Sprintf("http://%s:%s%s", reqDetails.Domain, reqDetails.Port, reqDetails.Path)
 	} else {
-		// Default URL without the port (e.g., http://{component-name}/path)
 		urlStr = fmt.Sprintf("http://%s%s", reqDetails.Domain, reqDetails.Path)
 	}
-	// todo: uncomment if you want to test
-	// if componentName == "node-webapp" {
-	// 	urlStr = fmt.Sprintf("http://localhost:%s%s", "3000", reqDetails.Path)
-	// }
+
+	log.Println("Received request for proxy call for:", urlStr)
 
 	// Add query parameters to the URL
 	if len(reqDetails.Query) > 0 {
@@ -294,13 +311,13 @@ func main() {
 	// Router for REST API
 	apiRouter := mux.NewRouter()
 	apiRouter.HandleFunc("/health", func(http.ResponseWriter, *http.Request) {}).Methods("GET")
-	apiRouter.HandleFunc("/request/{component-name}", handleRequest)
-	apiRouter.HandleFunc("/request/{component-name}/{path:.*}", handleRequest)
+	apiRouter.HandleFunc("/request/{user}/{component}", handleRequest)
+	apiRouter.HandleFunc("/request/{user}/{component}/{path:.*}", handleRequest)
 	apiRouter.HandleFunc("/handle", handleRequestFromClient).Methods("POST")
 
 	// Router for WebSocket
 	wsRouter := mux.NewRouter()
-	wsRouter.HandleFunc("/ws/{component-name}", handleWebSocket)
+	wsRouter.HandleFunc("/ws/{user}/{component}", handleWebSocket)
 
 	// Start REST API server on port 8080
 	go func() {
