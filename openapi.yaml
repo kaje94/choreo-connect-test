@@ -11,7 +11,7 @@ paths:
         "200":
           description: Successfully running service
 
-  /request/{user}/{component}/{path}:
+  /preview/{user}/{component}/{path}:
     parameters:
       - name: user
         in: path
@@ -49,7 +49,7 @@ paths:
         "200":
           description: Request forwarded successfully
 
-  /request/{user}/{component}:
+  /preview/{user}/{component}:
     parameters:
       - name: user
         in: path
@@ -82,9 +82,9 @@ paths:
         "200":
           description: Request forwarded successfully
 
-  /handle:
+  /handle-client-req:
     post:
-      summary: Handle request from client
+      summary: Accept request details from client and make the request within the dataplane
       requestBody:
         required: true
         content:
