@@ -25,8 +25,8 @@ COPY --from=builder /app/go-local-bridge .
 
 # Install packages as root
 USER 0
-RUN apk update && \
-    apk add libcrypto3=3.3.2-r6 libssl3=3.3.2-r6 
+RUN apk update
+RUN apk add libcrypto3=3.3.2-r6 libssl3=3.3.2-r6 
 
 # Create a user with a known UID/GID within range 10000-20000.
 # This is required by Choreo to run the container as a non-root user.
