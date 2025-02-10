@@ -19,10 +19,14 @@ WORKDIR /app
 COPY . .
 RUN go build -o go-local-bridge .
 
-
-from alpine:3.20
+from alpine:3.21.2
 WORKDIR /app
 COPY --from=builder /app/go-local-bridge .
+
+# Install packages as root
+USER 0
+RUN apk update && \
+    apk add libcrypto3=3.3.2-r6 libssl3=3.3.2-r6 
 
 # Create a user with a known UID/GID within range 10000-20000.
 # This is required by Choreo to run the container as a non-root user.
@@ -36,7 +40,5 @@ RUN adduser \
     "choreo"
 # Use the above created unprivileged user
 USER 10014
-
-RUN apk add libcrypto3=3.3.2-r5 libssl3=3.3.2-r5 stdlib=1.23.6
 
 ENTRYPOINT ["./go-local-bridge"]
